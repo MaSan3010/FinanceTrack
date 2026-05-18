@@ -16,16 +16,15 @@
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 
-<!-- ✅ FIREBASE SDK — substitua a config abaixo com seus dados do Firebase Console -->
+<!-- ✅ FIREBASE SDK -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+  import { getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
+           createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile }
     from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
   import { getFirestore, collection, doc, setDoc, getDocs, deleteDoc, onSnapshot, query, where }
     from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-  // =======================================================
-  // 🔧 COLE AQUI SUA CONFIGURAÇÃO DO FIREBASE (passo 4 do guia)
   const firebaseConfig = {
     apiKey: "AIzaSyAOyca1Q4SUFDSMRwKa3VIxNL231jCAGwA",
     authDomain: "financetrack-3010.firebaseapp.com",
@@ -34,19 +33,25 @@
     messagingSenderId: "911151267374",
     appId: "1:911151267374:web:c833efa03015bfae5e29bf"
   };
-  // =======================================================
 
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const db = getFirestore(app);
-  const provider = new GoogleAuthProvider();
+  const googleProvider = new GoogleAuthProvider();
+  const microsoftProvider = new OAuthProvider('microsoft.com');
 
   let currentUser = null;
   let unsubTx = null, unsubGoals = null, unsubCats = null;
 
-  // ---- EXPOSE TO WINDOW ----
   window.FB = {
-    signIn: () => signInWithPopup(auth, provider),
+    signInGoogle: () => signInWithPopup(auth, googleProvider),
+    signInMicrosoft: () => signInWithPopup(auth, microsoftProvider),
+    signUpEmail: async (email, password, name) => {
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      await updateProfile(cred.user, { displayName: name });
+      return cred;
+    },
+    signInEmail: (email, password) => signInWithEmailAndPassword(auth, email, password),
     signOut: () => signOut(auth),
     getUser: () => currentUser,
 
@@ -133,6 +138,24 @@
   }
   .google-btn:hover { background: #f0f0f0; transform: translateY(-1px); box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
   .google-btn svg { width: 20px; height: 20px; flex-shrink: 0; }
+  .ms-btn {
+    display: flex; align-items: center; justify-content: center; gap: 12px;
+    background: #2f2f2f; color: white; border: 1px solid #444; border-radius: 10px;
+    padding: 13px 24px; font-family: 'Sora', sans-serif; font-size: 0.9rem; font-weight: 700;
+    cursor: pointer; width: 100%; transition: all 0.2s; margin-top: 10px;
+  }
+  .ms-btn:hover { background: #444; transform: translateY(-1px); box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+  .ms-btn svg { width: 20px; height: 20px; flex-shrink: 0; }
+  .login-divider { display: flex; align-items: center; margin: 18px 0 14px; gap: 10px; }
+  .login-divider::before, .login-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+  .login-divider span { font-size: 0.72rem; color: var(--text2); white-space: nowrap; }
+  .login-input { background: var(--surface2); border: 1px solid var(--border); border-radius: 9px; padding: 11px 14px; color: var(--text); font-family: 'Sora', sans-serif; font-size: 0.85rem; outline: none; width: 100%; margin-bottom: 10px; transition: border-color 0.2s; box-sizing: border-box; }
+  .login-input:focus { border-color: var(--accent); }
+  .login-email-btn { width: 100%; margin-top: 4px; }
+  .login-toggle { text-align: center; margin-top: 12px; font-size: 0.78rem; color: var(--text2); }
+  .login-toggle a { color: var(--accent); text-decoration: none; font-weight: 600; margin-left: 4px; }
+  .login-toggle a:hover { text-decoration: underline; }
+  #bio-lock-screen { display: none; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; text-align: center; }
   .login-note { font-size: 0.72rem; color: var(--text2); margin-top: 16px; line-height: 1.5; }
   #login-error { color: var(--expense); font-size: 0.8rem; margin-top: 12px; display: none; }
 
@@ -305,12 +328,50 @@
   <div class="login-title">FinanceTrack</div>
   <div class="login-sub">Controle financeiro pessoal sincronizado entre todos os seus dispositivos.</div>
   <div class="login-card">
-    <button class="google-btn" onclick="doLogin()">
-      <svg viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.2l6.7-6.7C35.7 2.2 30.2 0 24 0 14.6 0 6.6 5.4 2.5 13.3l7.8 6.1C12.3 13 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4 6.9-9.9 7.1-17z"/><path fill="#FBBC05" d="M10.3 28.6A14.8 14.8 0 0 1 9.5 24c0-1.6.3-3.2.8-4.6l-7.8-6.1A23.9 23.9 0 0 0 0 24c0 3.9.9 7.5 2.5 10.7l7.8-6.1z"/><path fill="#34A853" d="M24 48c6.2 0 11.4-2 15.2-5.5l-7.5-5.8c-2 1.4-4.6 2.2-7.7 2.2-6.3 0-11.6-4.2-13.5-9.9l-7.8 6.1C6.5 42.5 14.6 48 24 48z"/></svg>
+    <!-- Social Login Buttons -->
+    <button class="google-btn" onclick="doLoginGoogle()">
+      <svg viewBox="0 0 48 48" width="20" height="20"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.2l6.7-6.7C35.7 2.2 30.2 0 24 0 14.6 0 6.6 5.4 2.5 13.3l7.8 6.1C12.3 13 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4 6.9-9.9 7.1-17z"/><path fill="#FBBC05" d="M10.3 28.6A14.8 14.8 0 0 1 9.5 24c0-1.6.3-3.2.8-4.6l-7.8-6.1A23.9 23.9 0 0 0 0 24c0 3.9.9 7.5 2.5 10.7l7.8-6.1z"/><path fill="#34A853" d="M24 48c6.2 0 11.4-2 15.2-5.5l-7.5-5.8c-2 1.4-4.6 2.2-7.7 2.2-6.3 0-11.6-4.2-13.5-9.9l-7.8 6.1C6.5 42.5 14.6 48 24 48z"/></svg>
       Entrar com Google
     </button>
-    <div id="login-error">❌ Erro ao fazer login. Verifique a configuração do Firebase.</div>
-    <div class="login-note">🔒 Seus dados ficam salvos de forma segura no Firebase e sincronizam em tempo real em qualquer dispositivo.</div>
+    <button class="ms-btn" onclick="doLoginMicrosoft()">
+      <svg viewBox="0 0 21 21" width="20" height="20"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>
+      Entrar com Microsoft
+    </button>
+
+    <div class="login-divider"><span>ou entre com e-mail</span></div>
+
+    <!-- Email Login/Register -->
+    <div id="email-form">
+      <div id="email-name-field" style="display:none">
+        <input type="text" id="login-name" placeholder="Seu nome" class="login-input">
+      </div>
+      <input type="email" id="login-email" placeholder="E-mail" class="login-input">
+      <input type="password" id="login-pass" placeholder="Senha (mín. 6 caracteres)" class="login-input">
+      <button class="btn login-email-btn" id="btn-email" onclick="doLoginEmail()">Entrar</button>
+      <div class="login-toggle">
+        <span id="toggle-text">Não tem conta?</span>
+        <a href="#" id="toggle-link" onclick="toggleEmailMode(event)">Criar conta</a>
+      </div>
+    </div>
+
+    <div id="login-error">❌ <span id="login-error-msg">Erro ao fazer login.</span></div>
+    <div class="login-note">🔒 Seus dados ficam salvos de forma segura e sincronizam em tempo real.</div>
+  </div>
+</div>
+
+<!-- BIOMETRIC LOCK SCREEN -->
+<div id="bio-lock-screen" style="display:none">
+  <div class="login-logo">🔒</div>
+  <div class="login-title">FinanceTrack</div>
+  <div class="login-sub">Desbloqueie para acessar seus dados financeiros.</div>
+  <div class="login-card">
+    <button class="google-btn" onclick="doBiometricUnlock()">
+      🔐 Desbloquear com biometria
+    </button>
+    <button class="signout-btn" style="margin-top:12px;width:100%;padding:10px" onclick="skipBioAndEnter()">
+      Continuar sem biometria
+    </button>
+    <div class="login-note" style="margin-top:12px">Use sua digital, Face ID ou PIN do dispositivo.</div>
   </div>
 </div>
 
@@ -532,33 +593,157 @@ function toast(msg) {
 }
 
 // ===== AUTH =====
-async function doLogin() {
+let isEmailRegister = false;
+
+function showLoginError(msg) {
+  const el = document.getElementById('login-error');
+  document.getElementById('login-error-msg').textContent = msg;
+  el.style.display = 'block';
+}
+
+async function doLoginGoogle() {
   try {
     document.getElementById('login-error').style.display = 'none';
-    await window.FB.signIn();
+    await window.FB.signInGoogle();
   } catch(e) {
-    document.getElementById('login-error').style.display = 'block';
+    showLoginError('Erro ao entrar com Google. Verifique sua conexão.');
     console.error(e);
   }
 }
+
+async function doLoginMicrosoft() {
+  try {
+    document.getElementById('login-error').style.display = 'none';
+    await window.FB.signInMicrosoft();
+  } catch(e) {
+    if (e.code === 'auth/account-exists-with-different-credential') {
+      showLoginError('Este e-mail já está cadastrado com outro provedor. Tente Google ou e-mail.');
+    } else {
+      showLoginError('Erro ao entrar com Microsoft. Verifique sua conexão.');
+    }
+    console.error(e);
+  }
+}
+
+async function doLoginEmail() {
+  const email = document.getElementById('login-email').value.trim();
+  const pass = document.getElementById('login-pass').value;
+  const name = document.getElementById('login-name').value.trim();
+  document.getElementById('login-error').style.display = 'none';
+
+  if (!email || !pass) { showLoginError('Preencha e-mail e senha.'); return; }
+  if (pass.length < 6) { showLoginError('A senha precisa ter no mínimo 6 caracteres.'); return; }
+
+  try {
+    if (isEmailRegister) {
+      if (!name) { showLoginError('Preencha seu nome.'); return; }
+      await window.FB.signUpEmail(email, pass, name);
+      toast('✅ Conta criada com sucesso!');
+    } else {
+      await window.FB.signInEmail(email, pass);
+    }
+  } catch(e) {
+    const msgs = {
+      'auth/email-already-in-use': 'Este e-mail já está cadastrado. Faça login.',
+      'auth/invalid-email': 'E-mail inválido.',
+      'auth/weak-password': 'Senha muito fraca. Use no mínimo 6 caracteres.',
+      'auth/user-not-found': 'E-mail não cadastrado. Crie uma conta.',
+      'auth/wrong-password': 'Senha incorreta.',
+      'auth/invalid-credential': 'E-mail ou senha incorretos.',
+      'auth/too-many-requests': 'Muitas tentativas. Aguarde alguns minutos.',
+    };
+    showLoginError(msgs[e.code] || 'Erro ao fazer login: ' + e.message);
+    console.error(e);
+  }
+}
+
+function toggleEmailMode(e) {
+  e.preventDefault();
+  isEmailRegister = !isEmailRegister;
+  document.getElementById('email-name-field').style.display = isEmailRegister ? 'block' : 'none';
+  document.getElementById('btn-email').textContent = isEmailRegister ? 'Criar conta' : 'Entrar';
+  document.getElementById('toggle-text').textContent = isEmailRegister ? 'Já tem conta?' : 'Não tem conta?';
+  document.getElementById('toggle-link').textContent = isEmailRegister ? 'Fazer login' : 'Criar conta';
+  document.getElementById('login-error').style.display = 'none';
+}
+
+// ===== BIOMETRIC (WebAuthn) =====
+let bioVerified = false;
+async function checkBiometricSupport() {
+  if (!window.PublicKeyCredential) return false;
+  try {
+    const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+    return available;
+  } catch(e) { return false; }
+}
+
+async function doBiometricUnlock() {
+  try {
+    const challenge = new Uint8Array(32);
+    crypto.getRandomValues(challenge);
+    await navigator.credentials.create({
+      publicKey: {
+        challenge: challenge,
+        rp: { name: 'FinanceTrack', id: window.location.hostname },
+        user: {
+          id: new Uint8Array(16),
+          name: 'financetrack-user',
+          displayName: 'FinanceTrack User'
+        },
+        pubKeyCredParams: [{ alg: -7, type: 'public-key' }],
+        authenticatorSelection: {
+          authenticatorAttachment: 'platform',
+          userVerification: 'required'
+        },
+        timeout: 60000,
+      }
+    });
+    bioVerified = true;
+    enterApp();
+  } catch(e) {
+    console.error('Biometric error:', e);
+    toast('⚠️ Biometria cancelada ou não disponível.');
+  }
+}
+
+function skipBioAndEnter() {
+  bioVerified = true;
+  enterApp();
+}
+
+function enterApp() {
+  document.getElementById('bio-lock-screen').style.display = 'none';
+  document.getElementById('app-screen').style.display = 'block';
+  startSync();
+}
+
 async function doSignOut() {
   window.FB.unsubAll();
+  bioVerified = false;
   await window.FB.signOut();
 }
 
-window.addEventListener('authChange', e => {
+window.addEventListener('authChange', async e => {
   const user = e.detail;
   if (user) {
     document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('app-screen').style.display = 'block';
-    document.getElementById('user-name').textContent = user.displayName?.split(' ')[0] || 'Usuário';
+    document.getElementById('user-name').textContent = user.displayName?.split(' ')[0] || user.email?.split('@')[0] || 'Usuário';
     document.getElementById('user-avatar').src = user.photoURL || '';
     document.getElementById('monthSel').value = curMonth;
     document.getElementById('yearSel').value = curYear;
-    startSync();
+
+    // Check biometric support
+    const hasBio = await checkBiometricSupport();
+    if (hasBio && !bioVerified) {
+      document.getElementById('bio-lock-screen').style.display = 'flex';
+      document.getElementById('app-screen').style.display = 'none';
+    } else {
+      enterApp();
+    }
   } else {
     document.getElementById('login-screen').style.display = 'flex';
     document.getElementById('app-screen').style.display = 'none';
+    document.getElementById('bio-lock-screen').style.display = 'none';
     tx = []; goals = []; cats = [];
   }
 });
@@ -675,10 +860,18 @@ function confirmCancel() {
 let inactivityTimer = null;
 function resetInactivity() {
   if (inactivityTimer) clearTimeout(inactivityTimer);
-  inactivityTimer = setTimeout(() => {
+  inactivityTimer = setTimeout(async () => {
     if (window.FB && window.FB.getUser()) {
-      if (!isLocked) toggleLock();
-      toast('🔒 Tela bloqueada por inatividade (30 min)');
+      const hasBio = await checkBiometricSupport();
+      if (hasBio) {
+        bioVerified = false;
+        document.getElementById('app-screen').style.display = 'none';
+        document.getElementById('bio-lock-screen').style.display = 'flex';
+        toast('🔒 Sessão bloqueada por inatividade (30 min)');
+      } else if (!isLocked) {
+        toggleLock();
+        toast('🔒 Tela bloqueada por inatividade (30 min)');
+      }
     }
   }, 30 * 60 * 1000);
 }
