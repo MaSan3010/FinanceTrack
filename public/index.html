@@ -821,14 +821,23 @@ window.addEventListener('authChange', async e => {
     document.getElementById('monthSel').value = curMonth;
     document.getElementById('yearSel').value = curYear;
 
-    // Check biometric support
+    // Detect if mobile device
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+    if (!isMobile) {
+      // Desktop/notebook — no extra security needed
+      enterApp();
+      return;
+    }
+
+    // Mobile — check biometric/device unlock
     const hasBio = await checkBiometricSupport();
     if (hasBio && !bioVerified) {
       document.getElementById('bio-lock-screen').style.display = 'flex';
       document.getElementById('app-screen').style.display = 'none';
       showPinScreen();
     } else if (!hasBio && !bioVerified) {
-      // No biometric — check if PIN exists
+      // No biometric — check if PIN exists as fallback
       const hasPin = getStoredPin();
       if (hasPin) {
         document.getElementById('bio-lock-screen').style.display = 'flex';
@@ -962,6 +971,14 @@ function resetInactivity() {
   if (inactivityTimer) clearTimeout(inactivityTimer);
   inactivityTimer = setTimeout(async () => {
     if (window.FB && window.FB.getUser()) {
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      if (!isMobile) {
+        // Desktop — just blur the values
+        if (!isLocked) toggleLock();
+        toast('🔒 Tela bloqueada por inatividade (10 min)');
+        return;
+      }
+
       bioVerified = false;
       const hasBio = await checkBiometricSupport();
       const hasPin = getStoredPin();
@@ -969,13 +986,13 @@ function resetInactivity() {
         document.getElementById('app-screen').style.display = 'none';
         document.getElementById('bio-lock-screen').style.display = 'flex';
         showPinScreen();
-        toast('🔒 Sessão bloqueada por inatividade (30 min)');
+        toast('🔒 Sessão bloqueada por inatividade (10 min)');
       } else if (!isLocked) {
         toggleLock();
-        toast('🔒 Tela bloqueada por inatividade (30 min)');
+        toast('🔒 Tela bloqueada por inatividade (10 min)');
       }
     }
-  }, 30 * 60 * 1000);
+  }, 10 * 60 * 1000);
 }
 ['click','keydown','mousemove','touchstart','scroll'].forEach(e => document.addEventListener(e, resetInactivity));
 resetInactivity();
