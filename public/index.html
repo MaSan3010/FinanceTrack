@@ -955,7 +955,7 @@ const PAY_LABELS = {
   boleto:'📄 Boleto', transferencia:'🔄 Transf.'
 };
 const CARD_TYPES = ['credito','debito','vale_alimentacao','vale_refeicao'];
-const PARC_TYPES = ['credito','boleto'];
+const PARC_TYPES = ['credito','debito','pix','dinheiro','boleto','transferencia'];
 function toggleCardFields() {
   const pay = document.getElementById('n-pay').value;
   document.getElementById('card-fields').classList.toggle('show', CARD_TYPES.includes(pay));
