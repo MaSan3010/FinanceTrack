@@ -304,6 +304,19 @@
   #card-fields { display: none; }
   #card-fields.show { display: grid; }
 
+  #parc-fields { display: none; }
+  #parc-fields.show { display: grid; }
+
+  .parc-card { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent4); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 10px; }
+  .parc-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+  .parc-name { font-size: 0.88rem; font-weight: 700; }
+  .parc-info { font-size: 0.74rem; color: var(--text2); margin-top: 4px; }
+  .parc-bar-wrap { background: var(--bg); border-radius: 6px; height: 6px; overflow: hidden; margin: 9px 0; }
+  .parc-bar { height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--accent4), var(--accent)); transition: width 0.6s; }
+  .parc-actions { display: flex; gap: 6px; }
+  .parc-tag { display: inline-flex; align-items: center; font-size: 0.66rem; color: var(--accent4); background: rgba(116,185,255,0.1); border: 1px solid rgba(116,185,255,0.3); border-radius: 5px; padding: 1px 6px; margin-left: 5px; font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+  .parc-tag.adv { color: var(--saving); background: rgba(255,209,102,0.1); border-color: rgba(255,209,102,0.3); }
+
   .lock-btn { background: none; border: 1px solid var(--border); color: var(--text2); border-radius: 8px; padding: 5px 10px; font-size: 0.82rem; cursor: pointer; transition: all 0.2s; line-height: 1; }
   .lock-btn:hover { border-color: var(--saving); color: var(--saving); }
   .lock-btn.locked { border-color: var(--expense); color: var(--expense); }
@@ -527,7 +540,23 @@
         </div>
         <div><div class="flabel">Últimos 4 dígitos</div><input type="text" id="n-digits" placeholder="0000" maxlength="4" pattern="[0-9]{4}"></div>
       </div>
+      <div class="fgrid fg3" id="parc-fields">
+        <div><div class="flabel">Parcelas</div>
+          <select class="fs" id="n-parc">
+            <option value="1">À vista (1x)</option>
+            <option value="2">2x</option><option value="3">3x</option><option value="4">4x</option>
+            <option value="5">5x</option><option value="6">6x</option><option value="7">7x</option>
+            <option value="8">8x</option><option value="9">9x</option><option value="10">10x</option>
+            <option value="11">11x</option><option value="12">12x</option><option value="15">15x</option>
+            <option value="18">18x</option><option value="24">24x</option><option value="36">36x</option>
+            <option value="48">48x</option><option value="60">60x</option>
+          </select>
+        </div>
+        <div id="parc-preview" style="grid-column:span 2;align-self:end;font-size:0.78rem;color:var(--text2);padding:9px 0"></div>
+      </div>
     </div>
+    <div class="sec-title">🛒 Compras parceladas ativas</div>
+    <div id="parc-list"></div>
     <div class="sec-title">Histórico do mês</div>
     <table><thead><tr><th>Tipo</th><th>Categoria</th><th>Pagamento</th><th>Descrição</th><th>Data</th><th>Valor</th><th></th></tr></thead><tbody id="hist-tb"></tbody></table>
     <div class="sec-title">Gerenciar categorias</div>
@@ -926,10 +955,23 @@ const PAY_LABELS = {
   boleto:'📄 Boleto', transferencia:'🔄 Transf.'
 };
 const CARD_TYPES = ['credito','debito','vale_alimentacao','vale_refeicao'];
+const PARC_TYPES = ['credito','boleto'];
 function toggleCardFields() {
   const pay = document.getElementById('n-pay').value;
-  const cf = document.getElementById('card-fields');
-  if (CARD_TYPES.includes(pay)) { cf.classList.add('show'); } else { cf.classList.remove('show'); }
+  document.getElementById('card-fields').classList.toggle('show', CARD_TYPES.includes(pay));
+  document.getElementById('parc-fields').classList.toggle('show', PARC_TYPES.includes(pay));
+  updateParcPreview();
+}
+function updateParcPreview() {
+  const val = parseFloat(document.getElementById('n-val').value) || 0;
+  const parc = parseInt(document.getElementById('n-parc').value) || 1;
+  const el = document.getElementById('parc-preview');
+  if (!el) return;
+  if (parc > 1 && val > 0) {
+    el.innerHTML = `💡 ${parc}x de <strong style="color:var(--accent)">${fmt(val/parc)}</strong> · Total: <strong>${fmt(val)}</strong>`;
+  } else {
+    el.textContent = '';
+  }
 }
 function fmtPay(t) {
   if (!t.pay) return '<span class="pay-tag">—</span>';
@@ -937,6 +979,11 @@ function fmtPay(t) {
   if (t.brand) html += ' <span class="brand">' + t.brand + '</span>';
   if (t.digits) html += ' <span class="digits">****' + t.digits + '</span>';
   return '<span class="pay-tag">' + html + '</span>';
+}
+function fmtParcTag(t) {
+  if (!t.parcTotal || t.parcTotal <= 1) return '';
+  const cls = t.advanced ? 'parc-tag adv' : 'parc-tag';
+  return `<span class="${cls}">${t.parcNum}/${t.parcTotal}${t.advanced?' ⏩':''}</span>`;
 }
 
 // ===== LOCK SCREEN =====
@@ -1001,32 +1048,169 @@ resetInactivity();
 async function addTx() {
   const type = document.getElementById('n-type').value;
   const cat = document.getElementById('n-cat').value;
-  const val = parseFloat(document.getElementById('n-val').value);
+  const totalVal = parseFloat(document.getElementById('n-val').value);
   const desc = document.getElementById('n-desc').value.trim() || cat;
   const dateRaw = document.getElementById('n-date').value.trim();
   const today = new Date();
-  const date = dateRaw || `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()}`;
-  if (!val || val <= 0) { toast('⚠️ Informe um valor válido.'); return; }
+  if (!totalVal || totalVal <= 0) { toast('⚠️ Informe um valor válido.'); return; }
 
   const pay = document.getElementById('n-pay').value || '';
   const brand = CARD_TYPES.includes(pay) ? (document.getElementById('n-brand').value || '') : '';
   const digits = CARD_TYPES.includes(pay) ? (document.getElementById('n-digits').value || '') : '';
+  const parcTotal = PARC_TYPES.includes(pay) ? (parseInt(document.getElementById('n-parc').value) || 1) : 1;
 
   const btn = document.getElementById('btn-add');
   btn.disabled = true; btn.textContent = '...';
-  const item = { id: uid(), type, cat, val, desc, date, month: curMonth, year: curYear, pay, brand, digits };
-  await window.FB.saveTx(item);
+
+  // Parse start date
+  let startDate;
+  if (dateRaw && /^\d{2}\/\d{2}\/\d{4}$/.test(dateRaw)) {
+    const [d,m,y] = dateRaw.split('/').map(Number);
+    startDate = new Date(y, m-1, d);
+  } else {
+    startDate = today;
+  }
+
+  if (parcTotal <= 1) {
+    // Single transaction
+    const date = `${String(startDate.getDate()).padStart(2,'0')}/${String(startDate.getMonth()+1).padStart(2,'0')}/${startDate.getFullYear()}`;
+    const item = { id: uid(), type, cat, val: totalVal, desc, date, month: startDate.getMonth(), year: startDate.getFullYear(), pay, brand, digits };
+    await window.FB.saveTx(item);
+  } else {
+    // Multiple installments
+    const parcId = 'parc_' + uid();
+    const valPerParc = Math.round((totalVal / parcTotal) * 100) / 100;
+    const promises = [];
+    for (let i = 0; i < parcTotal; i++) {
+      const d = new Date(startDate.getFullYear(), startDate.getMonth() + i, startDate.getDate());
+      const dateStr = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+      const item = {
+        id: uid(), type, cat, val: valPerParc, desc, date: dateStr,
+        month: d.getMonth(), year: d.getFullYear(),
+        pay, brand, digits,
+        parcId, parcNum: i+1, parcTotal, parcDesc: desc
+      };
+      promises.push(window.FB.saveTx(item));
+    }
+    await Promise.all(promises);
+  }
+
   ['n-val','n-desc','n-date','n-digits'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('n-pay').value = '';
   document.getElementById('n-brand').value = '';
+  document.getElementById('n-parc').value = '1';
   document.getElementById('card-fields').classList.remove('show');
+  document.getElementById('parc-fields').classList.remove('show');
+  document.getElementById('parc-preview').textContent = '';
   btn.disabled = false; btn.textContent = '+ Add';
-  toast('✅ Lançamento salvo e sincronizado!');
+  toast(parcTotal > 1 ? `✅ ${parcTotal} parcelas criadas!` : '✅ Lançamento salvo e sincronizado!');
 }
+
 async function removeTx(id) {
-  showConfirm('Tem certeza que deseja excluir este lançamento?', async () => {
-    await window.FB.deleteTx(id);
-    toast('🗑️ Lançamento removido');
+  const t = tx.find(x => x.id === id);
+  if (t && t.parcId) {
+    showConfirm('Este lançamento faz parte de um parcelamento. Excluir TODAS as parcelas relacionadas?', async () => {
+      const related = tx.filter(x => x.parcId === t.parcId);
+      await Promise.all(related.map(x => window.FB.deleteTx(x.id)));
+      toast('🗑️ Parcelamento removido (' + related.length + ' parcelas)');
+    });
+  } else {
+    showConfirm('Tem certeza que deseja excluir este lançamento?', async () => {
+      await window.FB.deleteTx(id);
+      toast('🗑️ Lançamento removido');
+    });
+  }
+}
+
+// ===== PARCELAMENTOS ATIVOS =====
+function getActiveParcelamentos() {
+  const groups = {};
+  tx.forEach(t => {
+    if (t.parcId) {
+      if (!groups[t.parcId]) groups[t.parcId] = [];
+      groups[t.parcId].push(t);
+    }
+  });
+  // Filter only those with future installments
+  const now = new Date();
+  const curM = now.getMonth(), curY = now.getFullYear();
+  return Object.entries(groups).filter(([id, parcs]) => {
+    return parcs.some(p => (p.year > curY) || (p.year === curY && p.month >= curM));
+  }).map(([id, parcs]) => {
+    parcs.sort((a,b) => (a.year - b.year) || (a.month - b.month));
+    const paid = parcs.filter(p => (p.year < curY) || (p.year === curY && p.month < curM)).length;
+    return { id, parcs, paid, total: parcs.length, desc: parcs[0].parcDesc || parcs[0].desc, valEach: parcs[0].val };
+  });
+}
+
+function renderParcelamentos() {
+  const list = getActiveParcelamentos();
+  const el = document.getElementById('parc-list');
+  if (!list.length) {
+    el.innerHTML = '<div class="empty" style="padding:20px"><div class="empty-ico">🛒</div>Nenhuma compra parcelada ativa.</div>';
+    return;
+  }
+  el.innerHTML = list.map(p => {
+    const pct = (p.paid / p.total) * 100;
+    const remaining = p.total - p.paid;
+    const remVal = remaining * p.valEach;
+    return `<div class="parc-card">
+      <div class="parc-row">
+        <div style="flex:1;min-width:0">
+          <div class="parc-name">${p.desc}</div>
+          <div class="parc-info">${p.paid} de ${p.total} parcelas pagas · ${fmt(p.valEach)} cada · Faltam ${fmt(remVal)}</div>
+        </div>
+        <div class="parc-actions">
+          ${remaining > 1 ? `<button class="btn-sm" onclick="openAdvanceParc('${p.id}')">⏩ Adiantar</button>` : ''}
+          <button class="btn-sm del" onclick="removeParcelamento('${p.id}')">🗑️</button>
+        </div>
+      </div>
+      <div class="parc-bar-wrap"><div class="parc-bar" style="width:${pct}%"></div></div>
+      <div style="display:flex;justify-content:space-between;font-size:0.7rem;color:var(--text2)">
+        <span>${pct.toFixed(0)}% pago</span>
+        <span>${remaining} parcelas restantes</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function removeParcelamento(parcId) {
+  const related = tx.filter(x => x.parcId === parcId);
+  showConfirm(`Excluir TODAS as ${related.length} parcelas deste parcelamento?`, async () => {
+    await Promise.all(related.map(x => window.FB.deleteTx(x.id)));
+    toast('🗑️ Parcelamento removido');
+  });
+}
+
+function openAdvanceParc(parcId) {
+  const parcs = tx.filter(x => x.parcId === parcId);
+  if (!parcs.length) return;
+  parcs.sort((a,b) => (a.year - b.year) || (a.month - b.month));
+  const now = new Date();
+  const curM = now.getMonth(), curY = now.getFullYear();
+  const future = parcs.filter(p => (p.year > curY) || (p.year === curY && p.month > curM));
+  if (!future.length) { toast('⚠️ Não há parcelas futuras para adiantar.'); return; }
+
+  const max = future.length;
+  const desc = parcs[0].parcDesc || parcs[0].desc;
+  const valEach = parcs[0].val;
+
+  const qtd = prompt(`"${desc}"\n${future.length} parcelas futuras disponíveis.\nValor por parcela: ${fmt(valEach)}\n\nQuantas parcelas deseja adiantar para este mês?`, '1');
+  if (!qtd) return;
+  const n = parseInt(qtd);
+  if (!n || n < 1 || n > max) { toast('⚠️ Quantidade inválida.'); return; }
+
+  const totalAdv = n * valEach;
+  showConfirm(`Adiantar ${n} parcela${n>1?'s':''} para este mês?\nVocê vai pagar ${fmt(totalAdv)} a mais este mês.`, async () => {
+    const today = new Date();
+    const dateStr = `${String(today.getDate()).padStart(2,'0')}/${String(today.getMonth()+1).padStart(2,'0')}/${today.getFullYear()}`;
+    const promises = [];
+    for (let i = 0; i < n; i++) {
+      const p = { ...future[i], month: today.getMonth(), year: today.getFullYear(), date: dateStr, advanced: true };
+      promises.push(window.FB.saveTx(p));
+    }
+    await Promise.all(promises);
+    toast(`⏩ ${n} parcela${n>1?'s':''} adiantada${n>1?'s':''}!`);
   });
 }
 
@@ -1107,7 +1291,7 @@ function refreshDashboard() {
   document.getElementById('rec-tb').innerHTML = recent.length
     ? recent.map(t => `<tr class="trow">
         <td><span class="dot" style="background:${t.type==='income'?'var(--income)':'var(--expense)'}"></span>${t.cat}</td>
-        <td>${t.desc}</td>
+        <td>${t.desc}${fmtParcTag(t)}</td>
         <td>${fmtPay(t)}</td>
         <td class="mono" style="font-size:0.72rem;color:var(--text2)">${t.date}</td>
         <td class="${t.type==='income'?'inc-col':'exp-col'}">${t.type==='income'?'+':'−'}${fmt(t.val)}</td>
@@ -1136,12 +1320,13 @@ function refreshHistory() {
         <td><span class="badge ${t.type==='income'?'g':'r'}">${t.type==='income'?'💰 Receita':'💸 Despesa'}</span></td>
         <td>${t.cat}</td>
         <td>${fmtPay(t)}</td>
-        <td>${t.desc}</td>
+        <td>${t.desc}${fmtParcTag(t)}</td>
         <td class="mono" style="font-size:0.72rem;color:var(--text2)">${t.date}</td>
         <td class="${t.type==='income'?'inc-col':'exp-col'}">${t.type==='income'?'+':'−'}${fmt(t.val)}</td>
         <td><button class="btn-sm del" onclick="removeTx('${t.id}')">✕</button></td>
       </tr>`).join('')
     : '<tr><td colspan="7"><div class="empty"><div class="empty-ico">📋</div>Sem lançamentos.</div></td></tr>';
+  renderParcelamentos();
 }
 
 // ===== CHARTS =====
@@ -1279,6 +1464,14 @@ function nextJuliusQuote() {
 }
 
 function refreshAll() { refreshDashboard(); refreshHistory(); showJuliusQuote(); }
+
+// Update parc preview on input changes
+document.addEventListener('DOMContentLoaded', () => {
+  const valInput = document.getElementById('n-val');
+  const parcSel = document.getElementById('n-parc');
+  if (valInput) valInput.addEventListener('input', updateParcPreview);
+  if (parcSel) parcSel.addEventListener('change', updateParcPreview);
+});
 </script>
 </body>
 </html>
