@@ -42,7 +42,7 @@
   const microsoftProvider = new OAuthProvider('microsoft.com');
 
   let currentUser = null;
-  let unsubTx = null, unsubGoals = null, unsubCats = null;
+  let unsubTx = null, unsubGoals = null, unsubCats = null, unsubRecs = null;
 
   window.FB = {
     signInGoogle: () => signInWithPopup(auth, googleProvider),
@@ -76,13 +76,22 @@
       if (!currentUser) return;
       await setDoc(doc(db, 'users', currentUser.uid, 'settings', 'categories'), { list: cats });
     },
+    saveRec: async (rec) => {
+      if (!currentUser) return;
+      await setDoc(doc(db, 'users', currentUser.uid, 'recurrences', rec.id), rec);
+    },
+    deleteRec: async (id) => {
+      if (!currentUser) return;
+      await deleteDoc(doc(db, 'users', currentUser.uid, 'recurrences', id));
+    },
 
-    subscribeAll: (onTx, onGoals, onCats) => {
+    subscribeAll: (onTx, onGoals, onCats, onRecs) => {
       if (!currentUser) return;
       const uid = currentUser.uid;
       if (unsubTx) unsubTx();
       if (unsubGoals) unsubGoals();
       if (unsubCats) unsubCats();
+      if (unsubRecs) unsubRecs();
       unsubTx = onSnapshot(collection(db, 'users', uid, 'transactions'), snap => {
         const data = snap.docs.map(d => d.data());
         onTx(data);
@@ -94,11 +103,16 @@
       unsubCats = onSnapshot(doc(db, 'users', uid, 'settings', 'categories'), snap => {
         if (snap.exists()) onCats(snap.data().list);
       });
+      unsubRecs = onSnapshot(collection(db, 'users', uid, 'recurrences'), snap => {
+        const data = snap.docs.map(d => d.data());
+        if (onRecs) onRecs(data);
+      });
     },
     unsubAll: () => {
       if (unsubTx) unsubTx();
       if (unsubGoals) unsubGoals();
       if (unsubCats) unsubCats();
+      if (unsubRecs) unsubRecs();
     }
   };
 
@@ -317,6 +331,11 @@
   .parc-actions { display: flex; gap: 6px; }
   .parc-tag { display: inline-flex; align-items: center; font-size: 0.66rem; color: var(--accent4); background: rgba(116,185,255,0.1); border: 1px solid rgba(116,185,255,0.3); border-radius: 5px; padding: 1px 6px; margin-left: 5px; font-weight: 600; font-family: 'JetBrains Mono', monospace; }
   .parc-tag.adv { color: var(--saving); background: rgba(255,209,102,0.1); border-color: rgba(255,209,102,0.3); }
+  .rec-tag { display: inline-flex; align-items: center; font-size: 0.66rem; color: #a29bfe; background: rgba(162,155,254,0.1); border: 1px solid rgba(162,155,254,0.3); border-radius: 5px; padding: 1px 6px; margin-left: 5px; font-weight: 600; }
+
+  .rec-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+  .rec-name { font-size: 0.85rem; font-weight: 700; }
+  .rec-info { font-size: 0.72rem; color: var(--text2); margin-top: 4px; line-height: 1.5; }
 
   .lock-btn { background: none; border: 1px solid var(--border); color: var(--text2); border-radius: 8px; padding: 5px 10px; font-size: 0.82rem; cursor: pointer; transition: all 0.2s; line-height: 1; }
   .lock-btn:hover { border-color: var(--saving); color: var(--saving); }
@@ -329,6 +348,22 @@
   .confirm-btns { display: flex; gap: 10px; justify-content: center; }
   .confirm-btns .btn { font-size: 0.78rem; padding: 8px 18px; }
   .confirm-btns .btn.cancel { background: var(--surface2); color: var(--text2); border: 1px solid var(--border); }
+
+  .rec-card { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid #a29bfe; border-radius: var(--radius); padding: 14px 16px; margin-bottom: 10px; }
+  .rec-card.paused { opacity: 0.6; border-left-color: var(--text2); }
+  .rec-card.income { border-left-color: var(--income); }
+
+  .modal-overlay { position: fixed; top:0; left:0; right:0; bottom:0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 250; padding: 16px; }
+  .modal-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); max-width: 580px; width: 100%; max-height: 90vh; overflow-y: auto; }
+  .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+  .modal-header h3 { font-size: 1rem; font-weight: 700; }
+  .modal-close { background: none; border: none; color: var(--text2); font-size: 1.1rem; cursor: pointer; padding: 4px 8px; border-radius: 6px; }
+  .modal-close:hover { color: var(--expense); background: var(--surface2); }
+  .modal-body { padding: 18px 20px; }
+  .modal-footer { display: flex; gap: 10px; justify-content: flex-end; padding: 14px 20px; border-top: 1px solid var(--border); }
+  .modal-footer .btn.cancel { background: var(--surface2); color: var(--text2); border: 1px solid var(--border); }
+  #r-card-fields, #e-card-fields { display: none; }
+  #r-card-fields.show, #e-card-fields.show { display: grid; }
 
   .toast {
     position: fixed; bottom: 20px; right: 20px; z-index: 999;
@@ -556,8 +591,14 @@
         <div id="parc-preview" style="grid-column:span 2;align-self:end;font-size:0.78rem;color:var(--text2);padding:9px 0"></div>
       </div>
     </div>
+
     <div class="sec-title">🛒 Compras parceladas ativas</div>
     <div id="parc-list"></div>
+
+    <div class="sec-title">🔁 Pagamentos recorrentes</div>
+    <div id="rec-list"></div>
+    <button class="btn-sm" style="margin-bottom:14px" onclick="openRecForm()">+ Adicionar recorrência</button>
+
     <div class="sec-title">Histórico do mês</div>
     <table><thead><tr><th>Tipo</th><th>Categoria</th><th>Pagamento</th><th>Descrição</th><th>Data</th><th>Valor</th><th></th></tr></thead><tbody id="hist-tb"></tbody></table>
     <div class="sec-title">Gerenciar categorias</div>
@@ -614,6 +655,114 @@
   </div>
 </div>
 
+<!-- MODAL: RECORRÊNCIA -->
+<div class="modal-overlay" id="rec-modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 id="rec-modal-title">🔁 Nova recorrência</h3>
+      <button class="modal-close" onclick="closeRecForm()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="fgrid fg3">
+        <div><div class="flabel">Tipo</div><select class="fs" id="r-type"><option value="expense">💸 Despesa</option><option value="income">💰 Receita</option></select></div>
+        <div style="grid-column:span 2"><div class="flabel">Nome</div><input type="text" id="r-name" placeholder="Ex: Netflix, Salário"></div>
+      </div>
+      <div class="fgrid fg3">
+        <div><div class="flabel">Valor (R$)</div><input type="number" id="r-val" placeholder="0,00" step="0.01" min="0"></div>
+        <div><div class="flabel">Categoria</div><select class="fs" id="r-cat"></select></div>
+        <div><div class="flabel">Dia do mês</div><input type="number" id="r-day" placeholder="1-31" min="1" max="31"></div>
+      </div>
+      <div class="fgrid fg3">
+        <div><div class="flabel">Forma de pagamento</div>
+          <select class="fs" id="r-pay" onchange="toggleRecCardFields()">
+            <option value="">Selecione...</option>
+            <option value="credito">💳 Crédito</option>
+            <option value="debito">💳 Débito</option>
+            <option value="vale_alimentacao">🍽️ V.Alimentação</option>
+            <option value="vale_refeicao">🍽️ V.Refeição</option>
+            <option value="pix">📱 Pix</option>
+            <option value="dinheiro">💵 Dinheiro</option>
+            <option value="boleto">📄 Boleto</option>
+            <option value="transferencia">🔄 Transferência</option>
+          </select>
+        </div>
+        <div><div class="flabel">Início (MM/AAAA)</div><input type="text" id="r-start" placeholder="Ex: 06/2026"></div>
+        <div><div class="flabel">Fim (opcional)</div><input type="text" id="r-end" placeholder="MM/AAAA ou vazio"></div>
+      </div>
+      <div class="fgrid fg3" id="r-card-fields">
+        <div><div class="flabel">Bandeira</div>
+          <select class="fs" id="r-brand">
+            <option value="">Selecione...</option>
+            <option value="Visa">Visa</option><option value="Mastercard">Mastercard</option>
+            <option value="Elo">Elo</option><option value="Amex">American Express</option>
+            <option value="Hipercard">Hipercard</option><option value="Alelo">Alelo</option>
+            <option value="Sodexo">Sodexo</option><option value="VR">VR Benefícios</option>
+            <option value="Ticket">Ticket</option>
+          </select>
+        </div>
+        <div><div class="flabel">Últimos 4 dígitos</div><input type="text" id="r-digits" placeholder="0000" maxlength="4"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn cancel" onclick="closeRecForm()">Cancelar</button>
+      <button class="btn" onclick="saveRecurrence()">Salvar recorrência</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: EDITAR LANÇAMENTO -->
+<div class="modal-overlay" id="edit-modal" style="display:none">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>✏️ Editar lançamento</h3>
+      <button class="modal-close" onclick="closeEditForm()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="fgrid fg3">
+        <div><div class="flabel">Tipo</div><select class="fs" id="e-type"><option value="expense">💸 Despesa</option><option value="income">💰 Receita</option></select></div>
+        <div><div class="flabel">Categoria</div><select class="fs" id="e-cat"></select></div>
+        <div><div class="flabel">Valor (R$)</div><input type="number" id="e-val" step="0.01" min="0"></div>
+      </div>
+      <div class="fgrid fg3">
+        <div style="grid-column:span 2"><div class="flabel">Descrição</div><input type="text" id="e-desc"></div>
+        <div><div class="flabel">Data</div><input type="text" id="e-date" placeholder="DD/MM/AAAA"></div>
+      </div>
+      <div class="fgrid fg3">
+        <div><div class="flabel">Forma de pagamento</div>
+          <select class="fs" id="e-pay" onchange="toggleEditCardFields()">
+            <option value="">Selecione...</option>
+            <option value="credito">💳 Crédito</option>
+            <option value="debito">💳 Débito</option>
+            <option value="vale_alimentacao">🍽️ V.Alimentação</option>
+            <option value="vale_refeicao">🍽️ V.Refeição</option>
+            <option value="pix">📱 Pix</option>
+            <option value="dinheiro">💵 Dinheiro</option>
+            <option value="boleto">📄 Boleto</option>
+            <option value="transferencia">🔄 Transferência</option>
+          </select>
+        </div>
+      </div>
+      <div class="fgrid fg3" id="e-card-fields">
+        <div><div class="flabel">Bandeira</div>
+          <select class="fs" id="e-brand">
+            <option value="">Selecione...</option>
+            <option value="Visa">Visa</option><option value="Mastercard">Mastercard</option>
+            <option value="Elo">Elo</option><option value="Amex">American Express</option>
+            <option value="Hipercard">Hipercard</option><option value="Alelo">Alelo</option>
+            <option value="Sodexo">Sodexo</option><option value="VR">VR Benefícios</option>
+            <option value="Ticket">Ticket</option>
+          </select>
+        </div>
+        <div><div class="flabel">Últimos 4 dígitos</div><input type="text" id="e-digits" maxlength="4"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn cancel" onclick="closeEditForm()">Cancelar</button>
+      <button class="btn" onclick="saveEdit()">Salvar alterações</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 <div class="confirm-overlay" id="confirm-overlay" style="display:none">
   <div class="confirm-box">
@@ -629,7 +778,7 @@
 // ===== STATE (sincronizado via Firestore) =====
 let curMonth = new Date().getMonth();
 let curYear = 2026;
-let tx = [], goals = [], cats = [];
+let tx = [], goals = [], cats = [], recurrences = [];
 const DEFAULT_CATS = ['Salário','Freelance / Extra','Faculdade / Estudos','Automóvel','Combustível','Delivery','Padaria','Lazer','Restaurantes','Internet','Empréstimo Bancário','Moradia / Aluguel','Saúde','Roupas','Supermercado','Outros'];
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
@@ -890,9 +1039,10 @@ window.addEventListener('authChange', async e => {
 // ===== SYNC =====
 function startSync() {
   window.FB.subscribeAll(
-    (data) => { tx = data; refreshAll(); },
+    (data) => { tx = data; refreshAll(); autoGenerateRecurrences(); },
     (data) => { goals = data; renderGoals(); },
-    (data) => { cats = data.length ? data : DEFAULT_CATS; refreshCatSel(); renderCatBadges(); }
+    (data) => { cats = data.length ? data : DEFAULT_CATS; refreshCatSel(); renderCatBadges(); refreshRecCatSel(); refreshEditCatSel(); },
+    (data) => { recurrences = data; renderRecurrences(); autoGenerateRecurrences(); }
   );
   // Init categories if first login
   setTimeout(async () => {
@@ -985,6 +1135,10 @@ function fmtParcTag(t) {
   if (!t.parcTotal || t.parcTotal <= 1) return '';
   const cls = t.advanced ? 'parc-tag adv' : 'parc-tag';
   return `<span class="${cls}">${t.parcNum}/${t.parcTotal}${t.advanced?' ⏩':''}</span>`;
+}
+function fmtRecTag(t) {
+  if (!t.recId) return '';
+  return '<span class="parc-tag" style="color:var(--saving);background:rgba(255,209,102,0.1);border-color:rgba(255,209,102,0.3)">🔁</span>';
 }
 
 // ===== LOCK SCREEN =====
@@ -1115,6 +1269,11 @@ async function removeTx(id) {
       await Promise.all(related.map(x => window.FB.deleteTx(x.id)));
       toast('🗑️ Parcelamento removido (' + related.length + ' parcelas)');
     });
+  } else if (t && t.recId) {
+    showConfirm('Este lançamento foi gerado por uma recorrência. Excluir apenas este mês? (a recorrência continuará ativa para os próximos meses)', async () => {
+      await window.FB.deleteTx(id);
+      toast('🗑️ Lançamento do mês removido (recorrência ativa)');
+    });
   } else {
     showConfirm('Tem certeza que deseja excluir este lançamento?', async () => {
       await window.FB.deleteTx(id);
@@ -1215,6 +1374,279 @@ function openAdvanceParc(parcId) {
   });
 }
 
+// ===== RECURRENCES =====
+let editingRecId = null;
+
+function refreshRecCatSel() {
+  const sel = document.getElementById('r-cat');
+  if (sel) sel.innerHTML = (cats.length ? cats : DEFAULT_CATS).map(c => `<option value="${c}">${c}</option>`).join('');
+}
+
+function toggleRecCardFields() {
+  const pay = document.getElementById('r-pay').value;
+  document.getElementById('r-card-fields').classList.toggle('show', CARD_TYPES.includes(pay));
+}
+
+function openRecForm(recId) {
+  editingRecId = recId || null;
+  const m = document.getElementById('rec-modal');
+  refreshRecCatSel();
+
+  if (recId) {
+    const r = recurrences.find(x => x.id === recId);
+    if (!r) return;
+    document.getElementById('rec-modal-title').textContent = '✏️ Editar recorrência';
+    document.getElementById('r-type').value = r.type;
+    document.getElementById('r-name').value = r.name;
+    document.getElementById('r-val').value = r.val;
+    document.getElementById('r-cat').value = r.cat;
+    document.getElementById('r-day').value = r.day;
+    document.getElementById('r-pay').value = r.pay || '';
+    document.getElementById('r-brand').value = r.brand || '';
+    document.getElementById('r-digits').value = r.digits || '';
+    document.getElementById('r-start').value = r.startMonth !== undefined ? `${String(r.startMonth+1).padStart(2,'0')}/${r.startYear}` : '';
+    document.getElementById('r-end').value = (r.endMonth !== undefined && r.endMonth !== null) ? `${String(r.endMonth+1).padStart(2,'0')}/${r.endYear}` : '';
+  } else {
+    document.getElementById('rec-modal-title').textContent = '🔁 Nova recorrência';
+    ['r-name','r-val','r-day','r-digits','r-end'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('r-type').value = 'expense';
+    document.getElementById('r-pay').value = '';
+    document.getElementById('r-brand').value = '';
+    const now = new Date();
+    document.getElementById('r-start').value = `${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()}`;
+  }
+  toggleRecCardFields();
+  m.style.display = 'flex';
+}
+
+function closeRecForm() {
+  document.getElementById('rec-modal').style.display = 'none';
+  editingRecId = null;
+}
+
+function parseMonthYear(str) {
+  if (!str) return null;
+  const m = str.trim().match(/^(\d{1,2})\/(\d{4})$/);
+  if (!m) return null;
+  const month = parseInt(m[1]) - 1, year = parseInt(m[2]);
+  if (month < 0 || month > 11) return null;
+  return { month, year };
+}
+
+async function saveRecurrence() {
+  const type = document.getElementById('r-type').value;
+  const name = document.getElementById('r-name').value.trim();
+  const val = parseFloat(document.getElementById('r-val').value);
+  const cat = document.getElementById('r-cat').value;
+  const day = parseInt(document.getElementById('r-day').value);
+  const pay = document.getElementById('r-pay').value || '';
+  const brand = CARD_TYPES.includes(pay) ? (document.getElementById('r-brand').value || '') : '';
+  const digits = CARD_TYPES.includes(pay) ? (document.getElementById('r-digits').value || '') : '';
+  const start = parseMonthYear(document.getElementById('r-start').value);
+  const endRaw = document.getElementById('r-end').value.trim();
+  const end = endRaw ? parseMonthYear(endRaw) : null;
+
+  if (!name) { toast('⚠️ Informe o nome.'); return; }
+  if (!val || val <= 0) { toast('⚠️ Informe um valor válido.'); return; }
+  if (!day || day < 1 || day > 31) { toast('⚠️ Dia deve ser entre 1 e 31.'); return; }
+  if (!start) { toast('⚠️ Data de início inválida (use MM/AAAA).'); return; }
+  if (endRaw && !end) { toast('⚠️ Data de fim inválida (use MM/AAAA).'); return; }
+
+  const rec = {
+    id: editingRecId || ('rec_' + uid()),
+    type, name, val, cat, day, pay, brand, digits,
+    startMonth: start.month, startYear: start.year,
+    endMonth: end ? end.month : null,
+    endYear: end ? end.year : null,
+    paused: editingRecId ? (recurrences.find(x=>x.id===editingRecId)?.paused || false) : false
+  };
+
+  await window.FB.saveRec(rec);
+  closeRecForm();
+  toast(editingRecId ? '✅ Recorrência atualizada!' : '✅ Recorrência criada!');
+  setTimeout(() => autoGenerateRecurrences(), 500);
+}
+
+async function togglePauseRec(id) {
+  const r = recurrences.find(x => x.id === id);
+  if (!r) return;
+  r.paused = !r.paused;
+  await window.FB.saveRec(r);
+  toast(r.paused ? '⏸️ Recorrência pausada' : '▶️ Recorrência ativada');
+}
+
+function deleteRec(id) {
+  const r = recurrences.find(x => x.id === id);
+  if (!r) return;
+  const linked = tx.filter(t => t.recId === id);
+  const now = new Date();
+  const curM = now.getMonth(), curY = now.getFullYear();
+  const future = linked.filter(t => (t.year > curY) || (t.year === curY && t.month >= curM));
+
+  if (future.length > 0) {
+    showConfirm(`Excluir a recorrência "${r.name}" e também os ${future.length} lançamentos deste mês em diante?`, async () => {
+      await Promise.all(future.map(t => window.FB.deleteTx(t.id)));
+      await window.FB.deleteRec(id);
+      toast('🗑️ Recorrência e lançamentos futuros removidos');
+    });
+  } else {
+    showConfirm(`Excluir a recorrência "${r.name}"?`, async () => {
+      await window.FB.deleteRec(id);
+      toast('🗑️ Recorrência removida');
+    });
+  }
+}
+
+function renderRecurrences() {
+  const el = document.getElementById('rec-list');
+  if (!el) return;
+  if (!recurrences.length) {
+    el.innerHTML = '<div class="empty" style="padding:20px"><div class="empty-ico">🔁</div>Nenhuma recorrência cadastrada.</div>';
+    return;
+  }
+  const sorted = [...recurrences].sort((a,b) => a.name.localeCompare(b.name));
+  el.innerHTML = sorted.map(r => {
+    const next = nextRecDate(r);
+    const nextStr = next ? `${String(next.day).padStart(2,'0')}/${String(next.month+1).padStart(2,'0')}/${next.year}` : '—';
+    const payInfo = r.pay ? PAY_LABELS[r.pay] : 'Não definido';
+    const brandInfo = r.brand ? ` · ${r.brand}` : '';
+    const digitsInfo = r.digits ? ` ****${r.digits}` : '';
+    const cls = 'rec-card' + (r.paused ? ' paused' : '') + (r.type === 'income' ? ' income' : '');
+    return `<div class="${cls}">
+      <div class="parc-row">
+        <div style="flex:1;min-width:0">
+          <div class="parc-name">${r.type==='income'?'💰':'💸'} ${r.name} · ${fmt(r.val)}/mês ${r.paused?'<span style="color:var(--text2);font-size:0.7rem">(pausado)</span>':''}</div>
+          <div class="parc-info">📅 Todo dia ${r.day} · ${payInfo}${brandInfo}${digitsInfo} · Cat: ${r.cat}</div>
+          <div class="parc-info" style="margin-top:4px">${r.paused?'⏸️ Pausada':'✅ Próximo: ' + nextStr}</div>
+        </div>
+        <div class="parc-actions">
+          <button class="btn-sm" onclick="togglePauseRec('${r.id}')">${r.paused?'▶️':'⏸️'}</button>
+          <button class="btn-sm" onclick="openRecForm('${r.id}')">✏️</button>
+          <button class="btn-sm del" onclick="deleteRec('${r.id}')">🗑️</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function nextRecDate(r) {
+  if (r.paused) return null;
+  const now = new Date();
+  const curM = now.getMonth(), curY = now.getFullYear(), curD = now.getDate();
+  let m = curM, y = curY;
+  if (curD > r.day) { m++; if (m > 11) { m = 0; y++; } }
+  // Check start
+  if (y < r.startYear || (y === r.startYear && m < r.startMonth)) { m = r.startMonth; y = r.startYear; }
+  // Check end
+  if (r.endMonth !== null && r.endYear !== null) {
+    if (y > r.endYear || (y === r.endYear && m > r.endMonth)) return null;
+  }
+  // Clamp day
+  const daysIn = new Date(y, m+1, 0).getDate();
+  const day = Math.min(r.day, daysIn);
+  return { day, month: m, year: y };
+}
+
+async function autoGenerateRecurrences() {
+  if (!recurrences.length) return;
+  const now = new Date();
+  const curM = now.getMonth(), curY = now.getFullYear();
+
+  for (const r of recurrences) {
+    if (r.paused) continue;
+    // For each month from start until current
+    let m = r.startMonth, y = r.startYear;
+    while (y < curY || (y === curY && m <= curM)) {
+      // Check end
+      if (r.endMonth !== null && r.endYear !== null) {
+        if (y > r.endYear || (y === r.endYear && m > r.endMonth)) break;
+      }
+      // Check if already exists
+      const exists = tx.some(t => t.recId === r.id && t.month === m && t.year === y);
+      if (!exists) {
+        const daysIn = new Date(y, m+1, 0).getDate();
+        const d = Math.min(r.day, daysIn);
+        const dateStr = `${String(d).padStart(2,'0')}/${String(m+1).padStart(2,'0')}/${y}`;
+        const item = {
+          id: uid(), type: r.type, cat: r.cat, val: r.val, desc: r.name,
+          date: dateStr, month: m, year: y,
+          pay: r.pay || '', brand: r.brand || '', digits: r.digits || '',
+          recId: r.id
+        };
+        await window.FB.saveTx(item);
+      }
+      m++; if (m > 11) { m = 0; y++; }
+      if (y > curY + 1) break; // safety
+    }
+  }
+}
+
+// ===== EDIT TRANSACTION =====
+let editingTxId = null;
+
+function refreshEditCatSel() {
+  const sel = document.getElementById('e-cat');
+  if (sel) sel.innerHTML = (cats.length ? cats : DEFAULT_CATS).map(c => `<option value="${c}">${c}</option>`).join('');
+}
+
+function toggleEditCardFields() {
+  const pay = document.getElementById('e-pay').value;
+  document.getElementById('e-card-fields').classList.toggle('show', CARD_TYPES.includes(pay));
+}
+
+function openEditForm(id) {
+  const t = tx.find(x => x.id === id);
+  if (!t) return;
+  editingTxId = id;
+  refreshEditCatSel();
+  document.getElementById('e-type').value = t.type;
+  document.getElementById('e-cat').value = t.cat;
+  document.getElementById('e-val').value = t.val;
+  document.getElementById('e-desc').value = t.desc;
+  document.getElementById('e-date').value = t.date;
+  document.getElementById('e-pay').value = t.pay || '';
+  document.getElementById('e-brand').value = t.brand || '';
+  document.getElementById('e-digits').value = t.digits || '';
+  toggleEditCardFields();
+  document.getElementById('edit-modal').style.display = 'flex';
+}
+
+function closeEditForm() {
+  document.getElementById('edit-modal').style.display = 'none';
+  editingTxId = null;
+}
+
+async function saveEdit() {
+  if (!editingTxId) return;
+  const orig = tx.find(x => x.id === editingTxId);
+  if (!orig) return;
+
+  const type = document.getElementById('e-type').value;
+  const cat = document.getElementById('e-cat').value;
+  const val = parseFloat(document.getElementById('e-val').value);
+  const desc = document.getElementById('e-desc').value.trim() || cat;
+  const dateRaw = document.getElementById('e-date').value.trim();
+  const pay = document.getElementById('e-pay').value || '';
+  const brand = CARD_TYPES.includes(pay) ? (document.getElementById('e-brand').value || '') : '';
+  const digits = CARD_TYPES.includes(pay) ? (document.getElementById('e-digits').value || '') : '';
+
+  if (!val || val <= 0) { toast('⚠️ Informe um valor válido.'); return; }
+
+  // Parse date
+  let month = orig.month, year = orig.year, date = orig.date;
+  if (dateRaw && /^\d{2}\/\d{2}\/\d{4}$/.test(dateRaw)) {
+    const [d,mo,y] = dateRaw.split('/').map(Number);
+    month = mo - 1;
+    year = y;
+    date = dateRaw;
+  }
+
+  const updated = { ...orig, type, cat, val, desc, date, month, year, pay, brand, digits };
+  await window.FB.saveTx(updated);
+  closeEditForm();
+  toast('✅ Lançamento atualizado!');
+}
+
 // ===== GOALS =====
 async function addGoal() {
   const name = document.getElementById('g-name').value.trim();
@@ -1292,7 +1724,7 @@ function refreshDashboard() {
   document.getElementById('rec-tb').innerHTML = recent.length
     ? recent.map(t => `<tr class="trow">
         <td><span class="dot" style="background:${t.type==='income'?'var(--income)':'var(--expense)'}"></span>${t.cat}</td>
-        <td>${t.desc}${fmtParcTag(t)}</td>
+        <td>${t.desc}${fmtParcTag(t)}${fmtRecTag(t)}</td>
         <td>${fmtPay(t)}</td>
         <td class="mono" style="font-size:0.72rem;color:var(--text2)">${t.date}</td>
         <td class="${t.type==='income'?'inc-col':'exp-col'}">${t.type==='income'?'+':'−'}${fmt(t.val)}</td>
@@ -1321,13 +1753,17 @@ function refreshHistory() {
         <td><span class="badge ${t.type==='income'?'g':'r'}">${t.type==='income'?'💰 Receita':'💸 Despesa'}</span></td>
         <td>${t.cat}</td>
         <td>${fmtPay(t)}</td>
-        <td>${t.desc}${fmtParcTag(t)}</td>
+        <td>${t.desc}${fmtParcTag(t)}${fmtRecTag(t)}</td>
         <td class="mono" style="font-size:0.72rem;color:var(--text2)">${t.date}</td>
         <td class="${t.type==='income'?'inc-col':'exp-col'}">${t.type==='income'?'+':'−'}${fmt(t.val)}</td>
-        <td><button class="btn-sm del" onclick="removeTx('${t.id}')">✕</button></td>
+        <td style="white-space:nowrap">
+          <button class="btn-sm" onclick="openEditForm('${t.id}')" title="Editar">✏️</button>
+          <button class="btn-sm del" onclick="removeTx('${t.id}')" title="Excluir">✕</button>
+        </td>
       </tr>`).join('')
     : '<tr><td colspan="7"><div class="empty"><div class="empty-ico">📋</div>Sem lançamentos.</div></td></tr>';
   renderParcelamentos();
+  renderRecurrences();
 }
 
 // ===== CHARTS =====
